@@ -1,3 +1,5 @@
+![tidal2garmin](assets/banner.svg)
+
 # tidal2garmin
 
 Put your Tidal playlists on a Garmin watch, offline, from Linux.
@@ -60,30 +62,43 @@ Status, with the watch plugged in:
 
 ```
 $ ./tidal2garmin.py
-Tidal:   session stored
-Library: /home/me/Music/tidal-garmin  (1 playlists, 106 tracks)
-Watch:   Garmin International [091e:5117] /dev/bus/usb/003/034  mode=MTP  ok (gvfs)
-Mounted: /run/user/1000/gvfs/mtp:host=091e_5117_0000c0ffee00/Internal Storage/Music
-         104 synced tracks, 0 other files, playlists: Electro.m3u
-Space:   15.6 GB free of 31.1 GB
-Pending: +2 tracks (21.3 MB), -0 tracks (0 B) -> 15.6 GB free after push
+
+Tidal
+  login     session stored
+  library   ~/Music/tidal-garmin · 2 playlists · 213 tracks
+  lists     Electro, Trail Running
+
+Watch
+  usb       Garmin International 091e:5117 /dev/bus/usb/003/034
+  state     MTP · ok (gvfs)
+  music     211 synced tracks · 0 other files · playlists: Electro, Trail Running
+  space     15.6 GB free of 31.1 GB  ━━━━━━━━━━━━━━━━━━━━━━━━ 50% used
+
+Next push
+  copy      2 tracks (21.3 MB)
+  delete    0 tracks (0 B)
+  after     15.6 GB free
 ```
 
 Finding and pulling a playlist:
 
 ```
 $ ./tidal2garmin.py playlists
-1f3a9c2e-7b41-4d0a-9e55-3c8d2a6b7f10   107  Electro
-8c0d5e71-2a9f-4b3c-a1d4-6e2f9b0c4a88    42  Trail Running
-d4b7e2a0-5c6f-41e9-8f13-0a9c7d2e6b55    18  Sunday Morning
+
+Your playlists (3)
+  1f3a9c2e-7b41-4d0a-9e55-3c8d2a6b7f10    107  Electro
+  8c0d5e71-2a9f-4b3c-a1d4-6e2f9b0c4a88    106  Trail Running
+  d4b7e2a0-5c6f-41e9-8f13-0a9c7d2e6b55     18  Sunday Morning
 
 $ ./tidal2garmin.py pull electro
-skip Roman Blum - Menekeita (Amount Remix): no stream (HTTPError)
-Electro (playlist) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 107/107 0:00:00
-Electro: 106 tracks (2 new, 1 skipped)
-Library: /home/me/Music/tidal-garmin
 
-$ ./tidal2garmin.py pull "sunday"
+  skip Roman Blum - Menekeita (Amount Remix) (no stream (HTTPError))
+  Electro (playlist) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 107/107 0:00:00
+  ✓ Electro: 106 tracks (2 new, 1 skipped)
+
+  library   ~/Music/tidal-garmin
+
+$ ./tidal2garmin.py pull sunday
 'sunday' is ambiguous:
   d4b7e2a0-5c6f-41e9-8f13-0a9c7d2e6b55  Sunday Morning
   5e9a1c3b-0d7f-4a26-b8e4-2f6c1a9d3e07  Lazy Sunday
@@ -93,24 +108,36 @@ Syncing to the watch:
 
 ```
 $ ./tidal2garmin.py push
-Watch: /run/user/1000/gvfs/mtp:host=091e_5117_0000c0ffee00/Internal Storage/Music
-copy 2 (21.3 MB), delete 0 (0 B) tracks; write 1, delete 0 playlists
-space: 15.6 GB free now, 15.6 GB after push (of 31.1 GB)
-copy to watch ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2/2 0:00:00
-Done. Eject the watch before unplugging: gio mount -u <mtp uri>  (or via file manager)
+
+Push
+  watch     watch:/Internal Storage/Music
+  copy      2 tracks (21.3 MB)
+  delete    0 tracks (0 B)
+  lists     write 2, delete 0
+  space     15.6 GB free now, 15.6 GB after (of 31.1 GB)
+
+  copy to watch ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2/2 0:00:00 
+  ✓ Done. Eject the watch before unplugging (file manager or gio mount -u)
 ```
 
 What is on the watch:
 
 ```
 $ ./tidal2garmin.py list
-== Electro (106 tracks)
-    1. DARKSIDE - What They Say
-    2. Recondite - Caldera
-    3. Fluke - O.K.
-    4. Touch Sensitive - Pizza Guy
-    5. RJD2 - Since We Last Spoke
+
+Electro (106 tracks)
+    1  DARKSIDE - What They Say
+    2  Recondite - Caldera
+    3  Fluke - O.K.
+    4  Touch Sensitive - Pizza Guy
+    5  RJD2 - Since We Last Spoke
   ...
+
+$ ./tidal2garmin.py list -s
+
+Playlists on the watch
+    106  Electro
+    105  Trail Running
 ```
 
 ## Troubleshooting

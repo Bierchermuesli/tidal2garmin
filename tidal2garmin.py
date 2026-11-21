@@ -28,14 +28,43 @@ from pathlib import Path
 import requests
 import tidalapi
 from mutagen.mp4 import MP4, MP4Cover
+from rich.console import Console
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeRemainingColumn
 
 
 def progress() -> Progress:
     return Progress(
-        TextColumn("{task.description}"), BarColumn(), MofNCompleteColumn(), TimeRemainingColumn(),
+        TextColumn("  {task.description}"), BarColumn(), MofNCompleteColumn(), TimeRemainingColumn(),
         TextColumn("[dim]{task.fields[item]}"),
+        console=out,
     )
+
+
+out = Console(highlight=False, soft_wrap=True)
+
+
+def head(title: str) -> None:
+    out.print()
+    out.print(f"[bold]{title}[/]")
+
+
+def kv(label: str, value: str) -> None:
+    out.print(f"  [dim]{label:<9}[/] {value}")
+
+
+def short(path: Path) -> str:
+    """~ for home; for the gvfs mount just the part inside the watch."""
+    try:
+        return "watch:/" + str(path.relative_to(GVFS)).split("/", 1)[1]
+    except (ValueError, IndexError):
+        return str(path).replace(str(Path.home()), "~", 1)
+
+
+def usage_bar(used: int, total: int, width: int = 24) -> str:
+    frac = used / total if total else 0
+    n = round(frac * width)
+    color = "red" if frac > 0.9 else "yellow" if frac > 0.75 else "green"
+    return f"[{color}]{'━' * n}[/][dim]{'━' * (width - n)}[/] {frac:.0%} used"
 
 LIB = Path(os.environ.get("TIDAL2GARMIN_LIB", Path.home() / "Music" / "tidal-garmin"))
 TRACKS = LIB / "tracks"
@@ -193,13 +222,19 @@ def tag(t: tidalapi.Track, path: Path) -> None:
 
 def cmd_login(_):
     s = session(interactive=True)
-    print(f"Logged in as user {s.user.id}. Session stored in {SESSION}")
+    head("Tidal")
+    kv("user", str(s.user.id))
+    kv("session", short(SESSION))
+    out.print()
 
 
 def cmd_playlists(_):
     s = session()
-    for p in my_playlists(s):
-        print(f"{p.id}  {p.num_tracks:4d}  {p.name}")
+    pls = my_playlists(s)
+    head(f"Your playlists ({len(pls)})")
+    for p in pls:
+        out.print(f"  [dim]{p.id}[/]  {p.num_tracks:5d}  {p.name}")
+    out.print()
 
 
 def cmd_pull(args):
@@ -211,6 +246,7 @@ def cmd_pull(args):
     if not refs:
         sys.exit("Nothing to pull. Give a URL/ID or --all.")
     TRACKS.mkdir(parents=True, exist_ok=True)
+    out.print()
     for ref in refs:
         kind, oid, name, tracks = resolve(s, ref)
         name = safe_name(name)
@@ -224,20 +260,23 @@ def cmd_pull(args):
                 if dest.exists():
                     ids.append(t.id)
                 elif err := download_track(s, t, dest):
-                    bar.console.print(f"[yellow]skip[/] {label}: {err}")
+                    bar.console.print(f"  [yellow]skip[/] {label} [dim]({err})[/]")
                     skipped += 1
                 else:
                     ids.append(t.id)
                     new += 1
                 bar.advance(task)
             bar.update(task, item="")
-        print(f"{name}: {len(ids)} tracks ({new} new, {skipped} skipped)")
+        out.print(f"  [green]✓[/] [bold]{name}[/]: {len(ids)} tracks "
+                  f"[dim]({new} new, {skipped} skipped)[/]")
         # Drop any other entry that pointed at the same source (e.g. playlist renamed).
         for k in [k for k, v in st["playlists"].items() if v["ref"] == f"{kind}/{oid}" and k != name]:
             del st["playlists"][k]
         st["playlists"][name] = {"ref": f"{kind}/{oid}", "tracks": ids}
         save_state(st)
-    print(f"Library: {LIB}")
+    out.print()
+    kv("library", short(LIB))
+    out.print()
 
 
 def cmd_drop(args):
@@ -245,7 +284,7 @@ def cmd_drop(args):
     if st["playlists"].pop(args.name, None) is None:
         sys.exit(f"Unknown playlist. Known: {', '.join(st['playlists'])}")
     save_state(st)
-    print(f"Dropped {args.name}. Run 'push' to remove it from the watch.")
+    out.print(f"\n  Dropped [bold]{args.name}[/]. Run [bold]push[/] to remove it from the watch.\n")
 
 
 GVFS = Path(f"/run/user/{os.getuid()}/gvfs")
@@ -298,7 +337,7 @@ def find_watch_music(release_kde: bool = False) -> Path:
         sys.exit("No Garmin on USB. Check the cable/clip (lsusb should show 091e:...).")
     kde = any(d["holder"] == "kiod6" for d in devs)
     if kde and release_kde:
-        print("Stopping KDE kiod6 so gvfs can claim the watch (KDE restarts it on demand)...")
+        out.print("  [yellow]Stopping KDE kiod6 so gvfs can claim the watch (KDE restarts it on demand)...[/]")
         subprocess.run(["pkill", "-x", "kiod6"], check=False)
         time.sleep(1.5)
     out = subprocess.run(["gio", "mount", "-li"], capture_output=True, text=True).stdout
@@ -353,72 +392,93 @@ def plan(st: dict, music: Path) -> dict:
 
 
 def cmd_status(_):
-    # Tidal login: offline check only (session file present), no network call.
-    print(f"Tidal:   {'session stored' if SESSION.exists() else 'not logged in (run: login)'}")
     st = load_state()
     n = len({i for v in st["playlists"].values() for i in v["tracks"]})
-    print(f"Library: {LIB}  ({len(st['playlists'])} playlists, {n} tracks)")
+    head("Tidal")
+    # Offline check only (session file present), no network call.
+    kv("login", "[green]session stored[/]" if SESSION.exists() else "[red]not logged in[/] (run: login)")
+    kv("library", f"{short(LIB)} [dim]·[/] {len(st['playlists'])} playlists [dim]·[/] {n} tracks")
+    if st["playlists"]:
+        kv("lists", ", ".join(st["playlists"]))
+
     devs = usb_garmins()
+    head("Watch")
     if not devs:
-        print("Watches: none on USB")
+        kv("usb", "[yellow]no Garmin found[/] (check the cable, lsusb | grep 091e)")
+        out.print()
         return
-    music = mounted_music()
     for d in devs:
-        mode = "transitional (wait/replug)" if d["pid"] == "0003" else "MTP"
-        held = {None: "free", "gvfsd-mtp": "ok (gvfs)"}.get(d["holder"], f"held by {d['holder']}")
+        mode = "[yellow]transitional, wait or replug[/]" if d["pid"] == "0003" else "MTP"
+        held = {None: "free", "gvfsd-mtp": "[green]ok[/] (gvfs)"}.get(d["holder"], f"[yellow]held by {d['holder']}[/]")
         if d["holder"] == "kiod6":
-            held = "held by KDE kiod6 -> use --release-kde"
-        print(f"Watch:   {d['name'] or 'Garmin'} [091e:{d['pid']}] {d['node']}  mode={mode}  {held}")
-    if music:
-        on = [p.name for p in music.iterdir()]
-        ours = [x for x in on if OURS.match(x)]
-        m3u = [x for x in on if x.lower().endswith(".m3u")]
-        print(f"Mounted: {music}")
-        print(f"         {len(ours)} synced tracks, {len(on) - len(ours) - len(m3u)} other files, playlists: {', '.join(m3u) or '-'}")
-        pl = plan(st, music)
-        print(f"Space:   {human(pl['free'])} free of {human(pl['total'])}")
-        if pl["missing"] or pl["stale"]:
-            print(f"Pending: +{len(pl['missing'])} tracks ({human(pl['add'])}), "
-                  f"-{len(pl['stale'])} tracks ({human(pl['freed'])}) -> {human(pl['after'])} free after push")
-            if pl["after"] < SPACE_MARGIN:
-                print("         WARNING: not enough space on the watch; drop a playlist first")
-        else:
-            print("         in sync")
+            held = "[yellow]held by KDE kiod6[/] (use --release-kde)"
+        kv("usb", f"{d['name'] or 'Garmin'} [dim]091e:{d['pid']} {d['node']}[/]")
+        kv("state", f"{mode} [dim]·[/] {held}")
+    music = mounted_music()
+    if not music:
+        kv("mount", "[dim]not mounted (push/list will try)[/]")
+        out.print()
+        return
+    on = [p.name for p in music.iterdir()]
+    ours = [x for x in on if OURS.match(x)]
+    m3u = [x[:-4] for x in on if x.lower().endswith(".m3u")]
+    pl = plan(st, music)
+    used = pl["total"] - pl["free"]
+    kv("music", f"{len(ours)} synced tracks [dim]·[/] {len(on) - len(ours) - len(m3u)} other files "
+                f"[dim]·[/] playlists: {', '.join(m3u) or '-'}")
+    kv("space", f"{human(pl['free'])} free of {human(pl['total'])}  {usage_bar(used, pl['total'])}")
+
+    head("Next push")
+    if not (pl["missing"] or pl["stale"]):
+        kv("sync", "[green]in sync[/]")
     else:
-        print("Mounted: no (push will try to mount)")
+        kv("copy", f"{len(pl['missing'])} tracks [dim]({human(pl['add'])})[/]")
+        kv("delete", f"{len(pl['stale'])} tracks [dim]({human(pl['freed'])})[/]")
+        kv("after", f"{human(pl['after'])} free")
+        if pl["after"] < SPACE_MARGIN:
+            kv("", "[red]not enough space on the watch, drop a playlist first[/]")
+    out.print()
 
 
 def cmd_list(args):
     music = find_watch_music(args.release_kde)
     files = sorted(p.name for p in music.iterdir())
     listed = set()
+    if args.short:
+        head("Playlists on the watch")
     for m3u in [f for f in files if f.lower().endswith(".m3u")]:
         ids = TRACK_REF.findall((music / m3u).read_text(errors="replace"))
-        print(f"== {m3u[:-4]} ({len(ids)} tracks)")
+        listed.update(f"T{tid}.m4a" for tid in ids)
+        if args.short:
+            out.print(f"  {len(ids):5d}  {m3u[:-4]}")
+            continue
+        head(f"{m3u[:-4]} [dim]({len(ids)} tracks)[/]")
         for n, tid in enumerate(ids, 1):
-            listed.add(f"T{tid}.m4a")
-            if not args.short:
-                print(f"  {n:3d}. {track_label(tid)}")
+            out.print(f"  [dim]{n:3d}[/]  {track_label(tid)}")
     loose = [f for f in files if not f.lower().endswith(".m3u") and f not in listed]
     if loose:
-        print(f"== not in any playlist ({len(loose)})")
+        head(f"Not in any playlist [dim]({len(loose)})[/]")
         for f in loose:
             m = OURS.match(f) and TRACK_REF.match(f)
-            print(f"       {track_label(m.group(1)) if m else f}")
+            out.print(f"       {track_label(m.group(1)) if m else f}")
+    out.print()
 
 
 def cmd_push(args):
     st = load_state()
     music = find_watch_music(args.release_kde)
-    print(f"Watch: {music}")
     pl = plan(st, music)
     missing, stale = pl["missing"], pl["stale"]
     m3us = {f"{name}.m3u": [f"T{i}.m4a" for i in v["tracks"]] for name, v in st["playlists"].items()}
     old_m3u = [m for m in st.get("pushed_m3u", []) if m not in m3us]
 
-    print(f"copy {len(missing)} ({human(pl['add'])}), delete {len(stale)} ({human(pl['freed'])}) tracks; "
-          f"write {len(m3us)}, delete {len(old_m3u)} playlists")
-    print(f"space: {human(pl['free'])} free now, {human(pl['after'])} after push (of {human(pl['total'])})")
+    head("Push" + (" [dim](dry run)[/]" if args.dry_run else ""))
+    kv("watch", short(music))
+    kv("copy", f"{len(missing)} tracks [dim]({human(pl['add'])})[/]")
+    kv("delete", f"{len(stale)} tracks [dim]({human(pl['freed'])})[/]")
+    kv("lists", f"write {len(m3us)}, delete {len(old_m3u)}")
+    kv("space", f"{human(pl['free'])} free now, {human(pl['after'])} after [dim](of {human(pl['total'])})[/]")
+    out.print()
     if pl["after"] < SPACE_MARGIN:
         sys.exit(f"Not enough space: need {human(pl['add'] - pl['freed'] + SPACE_MARGIN - pl['free'])} more "
                  f"(keeping {human(SPACE_MARGIN)} reserve). Drop a playlist or delete other music.")
@@ -452,7 +512,7 @@ def cmd_push(args):
             gio("copy", str(src), str(music / m))
     st["pushed_m3u"] = sorted(m3us)
     save_state(st)
-    print("Done. Eject the watch before unplugging: gio mount -u <mtp uri>  (or via file manager)")
+    out.print("  [green]✓ Done.[/] Eject the watch before unplugging [dim](file manager or gio mount -u)[/]\n")
 
 
 def main():

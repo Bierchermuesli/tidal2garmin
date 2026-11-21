@@ -9,6 +9,7 @@ playlists you choose as tagged AAC files and syncs them to the watch over USB, p
 - Tidal "HIGH" quality (AAC 320 kbit/s, `.m4a`): plays natively on the watch, no transcoding, no ffmpeg.
 - Tags and cover art are written into every file.
 - Incremental: only new tracks are downloaded and copied; tracks removed from a playlist are removed from the watch.
+- Checks free space on the watch before copying and refuses if it would not fit (200 MB reserve).
 - Only touches files it created (`Music/T<id>.m4a`, its `.m3u` playlists). Your other music stays put.
 
 Tested on a fēnix 7 Pro with Debian/KDE. Other Garmin watches with music storage should work the same way.
@@ -23,20 +24,30 @@ Tested on a fēnix 7 Pro with Debian/KDE. Other Garmin watches with music storag
 ## Usage
 
 ```sh
-./tidal2garmin.py login                                   # once; confirm the link in your browser
-./tidal2garmin.py playlists                               # find the playlist you want
-./tidal2garmin.py pull https://tidal.com/playlist/<uuid>  # download (albums and mixes work too)
-./tidal2garmin.py push                                    # watch plugged in via USB
+./tidal2garmin.py login        # once; confirm the link in your browser
+./tidal2garmin.py pull Electro # download a playlist by name
+./tidal2garmin.py push         # watch plugged in via USB
 ```
 
 Later, `pull --all` followed by `push` refreshes every playlist you have pulled before.
+
+`pull` takes any of these:
+
+| You pass | Example | Resolves to |
+|---|---|---|
+| Playlist name (yours or favorited) | `Electro`, `electro` | Exact match first, then substring; asks if ambiguous |
+| Playlist UUID | `1f3a9c2e-7b41-4d0a-9e55-3c8d2a6b7f10` | Playlist |
+| Number | `251380836` | Album |
+| Tidal URL | `https://tidal.com/browse/mix/0123abc…` | Playlist, album or mix |
+
+Mixes have no short form, so they need the URL. Run `playlists` to see names and IDs.
 
 | Command | What it does |
 |---|---|
 | *(none)* / `status` | Login, library and connected watches at a glance |
 | `login` | Log in to Tidal (device link), session kept in `~/.config/tidal2garmin/` |
-| `playlists` | Your Tidal playlists with IDs |
-| `pull <url-or-id>…` / `pull --all` | Download into the local library (`~/Music/tidal-garmin/`) |
+| `playlists` | Your Tidal playlists (own and favorited) with IDs |
+| `pull <name\|id\|url>…` / `pull --all` | Download into the local library (`~/Music/tidal-garmin/`) |
 | `drop <name>` | Forget a playlist; the next `push` removes it from the watch |
 | `push [--dry-run] [--release-kde]` | Mirror the library to the watch's `Music/` folder |
 | `list [-s]` | What is on the watch, per playlist |
@@ -54,7 +65,8 @@ Library: /home/me/Music/tidal-garmin  (1 playlists, 106 tracks)
 Watch:   Garmin International [091e:5117] /dev/bus/usb/003/034  mode=MTP  ok (gvfs)
 Mounted: /run/user/1000/gvfs/mtp:host=091e_5117_0000c0ffee00/Internal Storage/Music
          104 synced tracks, 0 other files, playlists: Electro.m3u
-         2 changes pending (run: push)
+Space:   15.6 GB free of 31.1 GB
+Pending: +2 tracks (21.3 MB), -0 tracks (0 B) -> 15.6 GB free after push
 ```
 
 Finding and pulling a playlist:
@@ -65,11 +77,16 @@ $ ./tidal2garmin.py playlists
 8c0d5e71-2a9f-4b3c-a1d4-6e2f9b0c4a88    42  Trail Running
 d4b7e2a0-5c6f-41e9-8f13-0a9c7d2e6b55    18  Sunday Morning
 
-$ ./tidal2garmin.py pull https://tidal.com/playlist/1f3a9c2e-7b41-4d0a-9e55-3c8d2a6b7f10
+$ ./tidal2garmin.py pull electro
 skip Roman Blum - Menekeita (Amount Remix): no stream (HTTPError)
 Electro (playlist) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 107/107 0:00:00
 Electro: 106 tracks (2 new, 1 skipped)
 Library: /home/me/Music/tidal-garmin
+
+$ ./tidal2garmin.py pull "sunday"
+'sunday' is ambiguous:
+  d4b7e2a0-5c6f-41e9-8f13-0a9c7d2e6b55  Sunday Morning
+  5e9a1c3b-0d7f-4a26-b8e4-2f6c1a9d3e07  Lazy Sunday
 ```
 
 Syncing to the watch:
@@ -77,7 +94,8 @@ Syncing to the watch:
 ```
 $ ./tidal2garmin.py push
 Watch: /run/user/1000/gvfs/mtp:host=091e_5117_0000c0ffee00/Internal Storage/Music
-copy 2, delete 0 tracks; write 1, delete 0 playlists
+copy 2 (21.3 MB), delete 0 (0 B) tracks; write 1, delete 0 playlists
+space: 15.6 GB free now, 15.6 GB after push (of 31.1 GB)
 copy to watch ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2/2 0:00:00
 Done. Eject the watch before unplugging: gio mount -u <mtp uri>  (or via file manager)
 ```

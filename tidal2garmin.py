@@ -9,7 +9,7 @@
   tidal2garmin.py list [-s]                 # music on the watch, per playlist
   tidal2garmin.py login
   tidal2garmin.py playlists                 # list your playlists with IDs
-  tidal2garmin.py pull <url-or-id> [...]    # download into the local library
+  tidal2garmin.py pull <name|id|url> [...]  # download into the local library
   tidal2garmin.py pull --all                # re-pull every known playlist (refresh)
   tidal2garmin.py drop <name>               # forget a playlist locally
   tidal2garmin.py push [--dry-run]          # mirror library to the watch's Music/ folder
@@ -79,10 +79,47 @@ def safe_name(name: str) -> str:
     return re.sub(r"\s+", " ", name)[:60] or "playlist"
 
 
+UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
+
+
+def my_playlists(s: tidalapi.Session) -> list:
+    """Playlists the user created or favorited (the endpoint pages by 50)."""
+    out, offset = [], 0
+    while True:
+        page = s.user.playlist_and_favorite_playlists(offset=offset)
+        out += page
+        if len(page) < 50:
+            return out
+        offset += 50
+
+
+def lookup(s: tidalapi.Session, ref: str) -> tuple[str, str]:
+    """Map a URL, UUID, album ID or playlist name to (kind, id)."""
+    if m := re.search(r"(playlist|album|mix)/([0-9a-zA-Z-]+)", ref):
+        return m.group(1), m.group(2)
+    if UUID.match(ref):
+        return "playlist", ref
+    if ref.isdigit():
+        return "album", ref
+    # A name we pulled before: reuse its stored source (works for albums/mixes too).
+    for name, v in load_state()["playlists"].items():
+        if name.casefold() == ref.casefold():
+            kind, _, oid = v["ref"].partition("/")
+            return kind, oid
+    # Otherwise search your Tidal playlists: exact name first, then substring.
+    pls = my_playlists(s)
+    hits = [p for p in pls if p.name.casefold() == ref.casefold()] or \
+           [p for p in pls if ref.casefold() in p.name.casefold()]
+    if len(hits) == 1:
+        return "playlist", hits[0].id
+    if not hits:
+        sys.exit(f"No playlist matching '{ref}'. See: tidal2garmin.py playlists")
+    sys.exit(f"'{ref}' is ambiguous:\n" + "\n".join(f"  {p.id}  {p.name}" for p in hits))
+
+
 def resolve(s: tidalapi.Session, ref: str):
-    """Return (kind, id, display_name, tracks) for a Tidal URL or bare ID."""
-    m = re.search(r"(playlist|album|mix)/([0-9a-fA-F-]+)", ref)
-    kind, oid = (m.group(1), m.group(2)) if m else (("album" if ref.isdigit() else "playlist"), ref)
+    """Return (kind, id, display_name, tracks) for a URL, ID or playlist name."""
+    kind, oid = lookup(s, ref)
     if kind == "playlist":
         p = s.playlist(oid)
         return kind, oid, p.name, p.tracks_paginated()
@@ -161,7 +198,7 @@ def cmd_login(_):
 
 def cmd_playlists(_):
     s = session()
-    for p in s.user.playlists():
+    for p in my_playlists(s):
         print(f"{p.id}  {p.num_tracks:4d}  {p.name}")
 
 
@@ -286,6 +323,35 @@ def track_label(tid: str) -> str:
         return f.name
 
 
+def human(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB"):
+        if abs(n) < 1000 or unit == "GB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
+        n /= 1000
+
+
+def space(music: Path) -> tuple[int, int]:
+    """(free, total) bytes on the watch storage holding Music/."""
+    v = os.statvfs(music)
+    return v.f_bavail * v.f_frsize, v.f_blocks * v.f_frsize
+
+
+SPACE_MARGIN = 200_000_000  # keep some room for activities, maps and firmware updates
+
+
+def plan(st: dict, music: Path) -> dict:
+    """What a push would do, and how many bytes it needs."""
+    want = {f"T{i}.m4a" for v in st["playlists"].values() for i in v["tracks"]}
+    have = {p.name for p in music.iterdir() if OURS.match(p.name)}
+    missing = sorted(f for f in want - have if (TRACKS / f).exists())
+    stale = sorted(have - want)
+    add = sum((TRACKS / f).stat().st_size for f in missing)
+    freed = sum((music / f).stat().st_size for f in stale)
+    free, total = space(music)
+    return {"missing": missing, "stale": stale, "add": add, "freed": freed,
+            "free": free, "total": total, "after": free + freed - add}
+
+
 def cmd_status(_):
     # Tidal login: offline check only (session file present), no network call.
     print(f"Tidal:   {'session stored' if SESSION.exists() else 'not logged in (run: login)'}")
@@ -309,9 +375,15 @@ def cmd_status(_):
         m3u = [x for x in on if x.lower().endswith(".m3u")]
         print(f"Mounted: {music}")
         print(f"         {len(ours)} synced tracks, {len(on) - len(ours) - len(m3u)} other files, playlists: {', '.join(m3u) or '-'}")
-        want = {f"T{i}.m4a" for v in st["playlists"].values() for i in v["tracks"]}
-        todo = len(want - set(ours)) + len(set(ours) - want)
-        print(f"         {'in sync' if not todo else f'{todo} changes pending (run: push)'}")
+        pl = plan(st, music)
+        print(f"Space:   {human(pl['free'])} free of {human(pl['total'])}")
+        if pl["missing"] or pl["stale"]:
+            print(f"Pending: +{len(pl['missing'])} tracks ({human(pl['add'])}), "
+                  f"-{len(pl['stale'])} tracks ({human(pl['freed'])}) -> {human(pl['after'])} free after push")
+            if pl["after"] < SPACE_MARGIN:
+                print("         WARNING: not enough space on the watch; drop a playlist first")
+        else:
+            print("         in sync")
     else:
         print("Mounted: no (push will try to mount)")
 
@@ -339,14 +411,17 @@ def cmd_push(args):
     st = load_state()
     music = find_watch_music(args.release_kde)
     print(f"Watch: {music}")
-    want = {f"T{i}.m4a" for v in st["playlists"].values() for i in v["tracks"]}
-    have = {p.name for p in music.iterdir() if OURS.match(p.name)}
-    missing = sorted(f for f in want - have if (TRACKS / f).exists())
-    stale = sorted(have - want)
+    pl = plan(st, music)
+    missing, stale = pl["missing"], pl["stale"]
     m3us = {f"{name}.m3u": [f"T{i}.m4a" for i in v["tracks"]] for name, v in st["playlists"].items()}
     old_m3u = [m for m in st.get("pushed_m3u", []) if m not in m3us]
 
-    print(f"copy {len(missing)}, delete {len(stale)} tracks; write {len(m3us)}, delete {len(old_m3u)} playlists")
+    print(f"copy {len(missing)} ({human(pl['add'])}), delete {len(stale)} ({human(pl['freed'])}) tracks; "
+          f"write {len(m3us)}, delete {len(old_m3u)} playlists")
+    print(f"space: {human(pl['free'])} free now, {human(pl['after'])} after push (of {human(pl['total'])})")
+    if pl["after"] < SPACE_MARGIN:
+        sys.exit(f"Not enough space: need {human(pl['add'] - pl['freed'] + SPACE_MARGIN - pl['free'])} more "
+                 f"(keeping {human(SPACE_MARGIN)} reserve). Drop a playlist or delete other music.")
     if args.dry_run:
         return
 

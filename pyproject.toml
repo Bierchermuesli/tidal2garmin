@@ -1,0 +1,21 @@
+[project]
+name = "tidal2garmin"
+version = "0.1.0"
+description = "Sync Tidal playlists to a Garmin watch over USB, from Linux"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = ["tidalapi>=0.8.11", "mutagen>=1.47", "requests", "rich>=13"]
+
+[project.scripts]
+tidal2garmin = "tidal2garmin:main"
+
+[project.urls]
+Homepage = "https://github.com/Bierchermuesli/tidal2garmin"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = ["tidal2garmin"]

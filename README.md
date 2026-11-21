@@ -7,7 +7,7 @@ Put your Tidal playlists on a Garmin watch, offline, from Linux.
 Tidal has no Garmin app, and Garmin Express does not exist on Linux. `tidal2garmin` downloads the
 playlists you choose as tagged AAC files and syncs them to the watch over USB, playlists included.
 
-- One script, no install step: [`uv`](https://docs.astral.sh/uv/) pulls Python and dependencies on first run.
+- Install as a command with `uv tool install`, or just run the single script: [`uv`](https://docs.astral.sh/uv/) pulls Python and dependencies on first run.
 - Tidal "HIGH" quality (AAC 320 kbit/s, `.m4a`): plays natively on the watch, no transcoding, no ffmpeg.
 - Tags and cover art are written into every file.
 - Incremental: only new tracks are downloaded and copied; tracks removed from a playlist are removed from the watch.
@@ -23,12 +23,49 @@ Tested on a fēnix 7 Pro with Debian/KDE. Other Garmin watches with music storag
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/).
 - For `push` (Linux): `gio` with gvfs MTP support (`gvfs-backends`, `gvfs-fuse` on Debian/Ubuntu).
 
+## Install
+
+All variants need [`uv`](https://docs.astral.sh/uv/getting-started/installation/); it fetches
+Python and the dependencies itself. Git is not required except for the last one.
+
+**As a command (recommended):** installs `tidal2garmin` on your `PATH`.
+
+```sh
+uv tool install https://github.com/Bierchermuesli/tidal2garmin/archive/refs/heads/main.zip
+uv tool upgrade tidal2garmin      # later, to update
+uv tool uninstall tidal2garmin    # to remove
+```
+
+**Single file:** download the script and run it directly.
+
+```sh
+curl -LO https://raw.githubusercontent.com/Bierchermuesli/tidal2garmin/main/tidal2garmin.py
+chmod +x tidal2garmin.py
+./tidal2garmin.py
+```
+
+**Try without installing:** uv runs the script straight from GitHub.
+
+```sh
+uv run https://raw.githubusercontent.com/Bierchermuesli/tidal2garmin/main/tidal2garmin.py status
+```
+
+**From a clone:** for hacking on it.
+
+```sh
+git clone https://github.com/Bierchermuesli/tidal2garmin.git
+cd tidal2garmin && ./tidal2garmin.py
+```
+
+The examples below use the installed command `tidal2garmin`; with the single-file or clone variant,
+call `./tidal2garmin.py` instead.
+
 ## Usage
 
 ```sh
-./tidal2garmin.py login        # once; confirm the link in your browser
-./tidal2garmin.py pull Electro # download a playlist by name
-./tidal2garmin.py push         # watch plugged in via USB
+tidal2garmin login        # once; confirm the link in your browser
+tidal2garmin pull Electro # download a playlist by name
+tidal2garmin push         # watch plugged in via USB
 ```
 
 Later, `pull --all` followed by `push` refreshes every playlist you have pulled before.
@@ -61,7 +98,7 @@ Set `TIDAL2GARMIN_LIB` to keep the library somewhere else.
 Status, with the watch plugged in:
 
 ```
-$ ./tidal2garmin.py
+$ tidal2garmin
 
 Tidal
   login     session stored
@@ -83,14 +120,14 @@ Next push
 Finding and pulling a playlist:
 
 ```
-$ ./tidal2garmin.py playlists
+$ tidal2garmin playlists
 
 Your playlists (3)
   1f3a9c2e-7b41-4d0a-9e55-3c8d2a6b7f10    107  Electro
   8c0d5e71-2a9f-4b3c-a1d4-6e2f9b0c4a88    106  Trail Running
   d4b7e2a0-5c6f-41e9-8f13-0a9c7d2e6b55     18  Sunday Morning
 
-$ ./tidal2garmin.py pull electro
+$ tidal2garmin pull electro
 
   skip Roman Blum - Menekeita (Amount Remix) (no stream (HTTPError))
   Electro (playlist) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 107/107 0:00:00
@@ -98,7 +135,7 @@ $ ./tidal2garmin.py pull electro
 
   library   ~/Music/tidal-garmin
 
-$ ./tidal2garmin.py pull sunday
+$ tidal2garmin pull sunday
 'sunday' is ambiguous:
   d4b7e2a0-5c6f-41e9-8f13-0a9c7d2e6b55  Sunday Morning
   5e9a1c3b-0d7f-4a26-b8e4-2f6c1a9d3e07  Lazy Sunday
@@ -107,7 +144,7 @@ $ ./tidal2garmin.py pull sunday
 Syncing to the watch:
 
 ```
-$ ./tidal2garmin.py push
+$ tidal2garmin push
 
 Push
   watch     watch:/Internal Storage/Music
@@ -123,7 +160,7 @@ Push
 What is on the watch:
 
 ```
-$ ./tidal2garmin.py list
+$ tidal2garmin list
 
 Electro (106 tracks)
     1  DARKSIDE - What They Say
@@ -133,7 +170,7 @@ Electro (106 tracks)
     5  RJD2 - Since We Last Spoke
   ...
 
-$ ./tidal2garmin.py list -s
+$ tidal2garmin list -s
 
 Playlists on the watch
     106  Electro

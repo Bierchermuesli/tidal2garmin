@@ -294,7 +294,10 @@ TRACK_REF = re.compile(r"T(\d+)\.m4a", re.I)  # matches our bare names and the w
 
 def usb_garmins() -> list[dict]:
     """Garmin devices on the USB bus, with the local process holding each one (if any)."""
-    out = subprocess.run(["lsusb"], capture_output=True, text=True).stdout
+    try:
+        out = subprocess.run(["lsusb"], capture_output=True, text=True).stdout
+    except FileNotFoundError:  # usbutils not installed
+        return []
     devs = []
     for m in re.finditer(r"Bus (\d+) Device (\d+): ID 091e:([0-9a-f]{4}) ?(.*)", out):
         node = f"/dev/bus/usb/{m.group(1)}/{m.group(2)}"
@@ -341,8 +344,8 @@ def find_watch_music(release_kde: bool = False) -> Path:
         out.print("  [yellow]Stopping KDE kiod6 so gvfs can claim the watch (KDE restarts it on demand)...[/]")
         subprocess.run(["pkill", "-x", "kiod6"], check=False)
         time.sleep(1.5)
-    out = subprocess.run(["gio", "mount", "-li"], capture_output=True, text=True).stdout
-    for uri in sorted(set(re.findall(r"mtp://091e[^\s]*", out))):
+    listing = subprocess.run(["gio", "mount", "-li"], capture_output=True, text=True).stdout
+    for uri in sorted(set(re.findall(r"mtp://091e[^\s]*", listing))):
         subprocess.run(["gio", "mount", uri], check=False)
     if (p := mounted_music()):
         return p

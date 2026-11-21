@@ -3,3 +3,6 @@ __pycache__/
 *.m3u
 session.json
 state.json
+*.egg-info/
+build/
+uv.lock

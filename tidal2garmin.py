@@ -5,14 +5,15 @@
 # ///
 """Download Tidal playlists/albums as AAC m4a and push them to a Garmin watch over USB (MTP/gvfs).
 
-  tidal2garmin.py                           # status: login, library, watches on USB
-  tidal2garmin.py list [-s]                 # music on the watch, per playlist
+  tidal2garmin.py                             # status: login, library, watches on USB
+  tidal2garmin.py list [-s]                   # music on the watch, per playlist
   tidal2garmin.py login
-  tidal2garmin.py playlists                 # list your playlists with IDs
-  tidal2garmin.py pull <name|id|url> [...]  # download into the local library
-  tidal2garmin.py pull --all                # re-pull every known playlist (refresh)
-  tidal2garmin.py drop <name>               # forget a playlist locally
-  tidal2garmin.py push [--dry-run]          # mirror library to the watch's Music/ folder
+  tidal2garmin.py playlists                   # list your playlists with IDs
+  tidal2garmin.py pull <name|id|url> [...]    # download into the local library
+  tidal2garmin.py pull --all                  # re-pull every known playlist (refresh)
+  tidal2garmin.py drop <name>                 # forget a playlist locally
+  tidal2garmin.py push [--dry-run] [--eject]  # mirror library to the watch's Music/ folder
+  tidal2garmin.py eject                       # unmount the watch before unplugging
 """
 
 import argparse
@@ -512,7 +513,37 @@ def cmd_push(args):
             gio("copy", str(src), str(music / m))
     st["pushed_m3u"] = sorted(m3us)
     save_state(st)
-    out.print("  [green]✓ Done.[/] Eject the watch before unplugging [dim](file manager or gio mount -u)[/]\n")
+    if args.eject:
+        out.print("  [green]✓ Done.[/]")
+        eject()
+    else:
+        out.print("  [green]✓ Done.[/] Run [bold]eject[/] before unplugging the watch.\n")
+
+
+def mounted_uris() -> list[str]:
+    """gvfs MTP URIs of mounted Garmin devices (mtp:host=091e_5117_SERIAL -> mtp://091e_5117_SERIAL/)."""
+    if not GVFS.exists():
+        return []
+    return [f"mtp://{h.name.split('=', 1)[1]}/" for h in sorted(GVFS.glob("mtp:host=091e_*"))]
+
+
+def eject() -> None:
+    uris = mounted_uris()
+    if not uris:
+        out.print("  [dim]No mounted watch, nothing to eject.[/]\n")
+        return
+    for uri in uris:
+        r = subprocess.run(["gio", "mount", "-u", uri], capture_output=True, text=True)
+        if r.returncode:
+            out.print(f"  [red]Eject failed[/] {uri}: {r.stderr.strip()} [dim](still copying? close file managers)[/]")
+        else:
+            out.print("  [green]✓ Ejected.[/] Safe to unplug.")
+    out.print()
+
+
+def cmd_eject(_):
+    out.print()
+    eject()
 
 
 def main():
@@ -537,7 +568,9 @@ def main():
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--release-kde", action="store_true",
                    help="stop KDE's kiod6 if it holds the MTP device")
+    p.add_argument("--eject", action="store_true", help="unmount the watch when done")
     p.set_defaults(fn=cmd_push)
+    sub.add_parser("eject", help="unmount the watch so it can be unplugged").set_defaults(fn=cmd_eject)
     args = ap.parse_args()
     args.fn(args)
 

@@ -65,7 +65,7 @@ call `./tidal2garmin.py` instead.
 ```sh
 tidal2garmin login        # once; confirm the link in your browser
 tidal2garmin pull Electro # download a playlist by name
-tidal2garmin push         # watch plugged in via USB
+tidal2garmin push --eject # watch plugged in via USB; unmounts when done
 ```
 
 Later, `pull --all` followed by `push` refreshes every playlist you have pulled before.
@@ -88,7 +88,8 @@ Mixes have no short form, so they need the URL. Run `playlists` to see names and
 | `playlists` | Your Tidal playlists (own and favorited) with IDs |
 | `pull <name\|id\|url>…` / `pull --all` | Download into the local library (`~/Music/tidal-garmin/`) |
 | `drop <name>` | Forget a playlist; the next `push` removes it from the watch |
-| `push [--dry-run] [--release-kde]` | Mirror the library to the watch's `Music/` folder |
+| `push [--dry-run] [--eject] [--release-kde]` | Mirror the library to the watch's `Music/` folder |
+| `eject` | Unmount the watch so it can be unplugged safely |
 | `list [-s]` | What is on the watch, per playlist |
 
 Set `TIDAL2GARMIN_LIB` to keep the library somewhere else.
@@ -154,7 +155,11 @@ Push
   space     15.6 GB free now, 15.6 GB after (of 31.1 GB)
 
   copy to watch ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2/2 0:00:00 
-  ✓ Done. Eject the watch before unplugging (file manager or gio mount -u)
+  ✓ Done. Run eject before unplugging the watch.
+
+$ tidal2garmin eject
+
+  ✓ Ejected. Safe to unplug.
 ```
 
 What is on the watch:
